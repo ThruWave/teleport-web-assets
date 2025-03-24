@@ -1,0 +1,60 @@
+name: Build Teleport Web Assets
+
+on:
+  - workflow_dispatch
+  - push
+
+env:
+  TELEPORT_VERSION: v15.4.26
+
+jobs:
+  build-assets:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install NPM dependencies
+        run: |
+          sudo npm install --global yarn wasm-pack
+
+      - name: Checkout teleport
+        uses: actions/checkout@v4
+        with:
+          repository: 'gravitational/teleport'
+          ref: '${{ env.TELEPORT_VERSION }}'
+          path: 'teleport'
+          submodules: false
+          fetch-depth: 0
+
+      - name: Build assets
+        working-directory: 'teleport'
+        run: |
+          make build-ui
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: teleport-web-assets-${{ github.sha }}
+          path: teleport/webassets/*
+
+  upload-release-assets:
+    if: contains( github.ref, 'refs/tags/v' )
+    needs: build-assets
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download artifacts
+        id: download
+        uses: actions/download-artifact@v4
+        with:
+          name: teleport-web-assets-${{ github.sha }}
+          path: artifacts
+
+      - name: Tar artifacts
+        run: |
+          tar -cz -f teleport-web-assets-${{ github.ref_name }}.tgz -C ${{ steps.download.outputs.download-path }} .
+
+      - name: Upload Release Assets
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file: "teleport-web-assets-${{ github.ref_name }}.tgz"
+          tag: ${{ github.ref }}
+          overwrite: true
+
